@@ -1,0 +1,81 @@
+clc
+clear
+load('Database.mat');
+% read my library
+MyLib = importAndSplit('MyLibrary(1).xlsx', 1, 'SP');
+MyLib = CompleteMyLib(MyLib, Database);
+% input target info.
+TargetName = '荷鲁斯';
+TargetSP = 'A/B/C';
+% Get target related value, Run GetTargetJudge, get RPD judge number
+TargetJudge = GetTargetJudge(TargetName, Database);
+TgtRPDCenter = TargetJudge(5);
+minVal = TargetJudge(1);
+isBigger = TargetJudge(2);
+maxVal = TargetJudge(3);
+isLess = TargetJudge(4);
+% 操作列表，用于记录每次操作
+operations = {};
+GetTgt = false;
+% Loop
+while ~GetTgt    
+    % Run can_reach_target
+    ParentsRPD = MyLib.RPD;
+    ParentsGender = MyLib.Gender;
+    [can_reach, output_best_pair] = can_reach_target(ParentsRPD, TgtRPDCenter,ParentsGender);
+    
+    if isempty(output_best_pair)
+        disp('缺少繁殖度小于目标的帕鲁')
+        break;
+    end
+    
+    if ~can_reach
+        for search_idx = 1:size(output_best_pair,1)
+            
+            % 判断最优值是否在判定区间
+            ChildRPD = floor(mean(output_best_pair(search_idx,1:2)));
+            IsInTargetArea = ((isBigger && (ChildRPD > minVal))||...
+                (isBigger && (ChildRPD >= minVal))) && ...
+                ((isLess && (ChildRPD < maxVal)) || ...
+                (isLess && (ChildRPD <= maxVal)));
+            
+            if IsInTargetArea
+                disp('能生出来目标，检查基因......');
+                %判断父母基因是否满足要求
+                [GenFlag,missingGenes,geneCounts] = checkForTargetGenes(MyLib(output_best_pair(search_idx,3:4),:), TargetSP);
+                if GenFlag
+                    disp('Get Target');
+                    disp('Father is:');
+                    disp(MyLib(output_best_pair(search_idx,3),:));
+                    disp('Mother is:');
+                    disp(MyLib(output_best_pair(search_idx,4),:))
+                    break;
+                else
+                    %UpdateGene%%%%%%%%%%%%%%%%
+                    disp('父母基因不够要求,检查下一组父母');
+                    disp(['缺失的基因为',missingGenes{:}]);
+                    PickedParentsIdx = search_idx;
+                    % 先生一组，并让A孩子遗传所有基因加入库中
+                    % 再生一组互补基因孩子B
+                    % 让A和B一直生直到满意
+                end
+            else
+                % 判断最好的孩子是谁，并添加到库里
+                resultTable = WhoIsChild(Database, ChildRPD); %直接输出跟MyLib对齐的格式，MyLib把SP分解完就去掉吧
+                % 判断孩子有什么基因SP，计算概率并放进去
+                fatherGenes = MyLib.SplitParts(output_best_pair(search_idx,3));
+                motherGenes = MyLib.SplitParts(output_best_pair(search_idx,4));
+                childGenesCombinations = generateChildGenes(fatherGenes{1}, motherGenes{1});
+            end
+            
+        end
+        GetTgt = true;
+    % cannot, use this pair to create a child   
+    else
+        GetTgt = true;
+    end
+        % If same parents, Run compare_SP function.
+        % Pick good SP parents
+    % Update library
+% End Loop
+end
